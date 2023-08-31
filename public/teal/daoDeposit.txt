@@ -1,0 +1,301 @@
+#pragma version 5
+// check if the app is being created
+// if so save creator
+int 0
+txn ApplicationID
+==
+bz not_creation
+byte "Creator"
+txn Sender
+app_global_put
+byte "ready"
+int 0
+app_global_put
+int 1
+return
+not_creation:
+// check if this is deletion ---
+int DeleteApplication
+txn OnCompletion
+==
+bz not_deletion
+//check if deletor is creator
+byte "Creator"
+app_global_get
+txn Sender
+==
+bz failed
+int 1
+return
+not_deletion:
+//---
+// check if this is update ---
+int UpdateApplication
+txn OnCompletion
+==
+bz not_update
+byte "Creator"
+app_global_get
+txn Sender
+==
+bz failed
+int 1
+return
+not_update:
+//---
+// check for closeout
+int CloseOut
+txn OnCompletion
+==
+bnz close_out
+// register
+txna ApplicationArgs 0
+byte "register"
+==
+bnz register
+//redeem
+txna ApplicationArgs 0
+byte "redeem" 
+==
+bnz redeem
+// deposit
+txna ApplicationArgs 0
+byte "deposit"
+==
+bnz deposit
+txna ApplicationArgs 0
+byte "fund"
+==
+bnz fund
+//withdraw
+txna ApplicationArgs 0
+byte "withdraw" 
+==
+bnz withdraw
+deposit:
+//check that funding period is complete
+byte "ready"
+app_global_get
+int 1
+==
+bz failed
+//check that there are 2 transactions in group
+global GroupSize
+int 2
+==
+bz failed
+//check that funds are being sent to app address
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+bz failed
+//check that txn2 is payment txn
+gtxn 1 Type
+byte "pay"
+==
+bz failed
+//check that deposit amount is less than or equal to funding amount
+//gtxn 1 Amount
+//int 3000000
+//<=
+//bz failed
+//set global deposit amount
+byte "depositAmount"
+byte "depositAmount"
+app_global_get
+gtxn 1 Amount
++
+app_global_put
+int 1
+return
+//fund
+fund:
+//check that funding term is not over
+byte "ready"
+app_global_get
+bnz failed
+//check that there are 2 transactions in group
+global GroupSize
+int 2
+==
+bz failed
+//check that funds are being sent to app address
+gtxn 1 Receiver
+global CurrentApplicationAddress
+==
+bz failed
+//check that txn2 is payment txn
+gtxn 1 Type
+byte "pay"
+==
+bz failed
+//check that funding amount will not be greater than funding goal
+int 1
+balance
+gtxn 1 Amount
++
+int 3000000
+<=
+bz failed
+//increment local funding amount
+int 0
+byte "amt"
+int 0
+byte "amt"
+app_local_get
+gtxn 1 Amount
++
+app_local_put
+int 1
+return
+withdraw:
+// Check that the account has opted in
+// account offset (0 == sender, 
+// 1 == txn.accounts[0], 2 == txn.accounts[1], etc..)
+int 0 
+txn ApplicationID
+app_opted_in
+bz failed
+//check payee id
+txn Sender
+//hard-coded address
+addr BKGZZRBHXOBCD5HMITYZ5CI3V3LS6OMLUT2I7C7QIRU6VA3B2BXUFRN2BE
+==
+bz failed
+//check that reciever is not app creator
+byte "Creator"
+app_global_get
+txn Sender
+==
+bnz failed
+//check if funding goal has been met
+int 1
+balance
+int 3000000
+>=
+bz failed
+byte "ready"
+app_global_get
+int 0
+==
+bz failed
+//calculate fee amount
+int 1
+balance
+int 1
+min_balance
+-
+int 14
+/
+store 0
+//withdrawal transaction
+itxn_begin
+int pay
+itxn_field TypeEnum
+int 1
+balance
+int 200000
+-
+load 0
+-
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+itxn_submit
+//fee transaction
+itxn_begin
+int pay
+itxn_field TypeEnum
+load 0
+itxn_field Amount
+//hard coded fee pool address
+addr Z3UAGED6PHNLT4QVUICR5AE7VGCTRZ2VNJSTOBIASI4KCKFCCB3LVJAJKM
+itxn_field Receiver
+itxn_submit
+byte "ready"
+int 1
+app_global_put
+int 1
+return
+//redeem
+redeem:
+// Check that the account has opted in
+// account offset (0 == sender, 
+// 1 == txn.accounts[0], 2 == txn.accounts[1], etc..)
+int 0 
+txn ApplicationID
+app_opted_in
+bz failed
+byte "ready"
+app_global_get
+int 1
+==
+bz failed
+//check if deposit >= funding goal
+//byte "depositAmount"
+//app_global_get
+//int 3000000
+//>=
+//bz failed
+//calculate amount available to withdraw
+int 0
+byte "amt"
+app_local_get
+byte "depositAmount"
+app_global_get
+*
+int 3000000
+/
+int 0
+byte "withdrawn"
+app_local_get
+-
+int 1
+min_balance
+-
+int 2000
+-
+store 0
+// check to make sure that amount available is > 10000 microalgos
+load 0 
+int 10000
+>=
+bz failed
+//withdrawal transaction
+itxn_begin
+int pay
+itxn_field TypeEnum
+load 0
+itxn_field Amount
+txn Sender
+itxn_field Receiver
+itxn_submit
+//update amount withdrawn
+int 0
+byte "withdrawn"
+int 0
+byte "withdrawn"
+app_local_get
+load 0
++
+app_local_put
+int 1
+return
+//may not need && below
+register:
+int OptIn
+txn OnCompletion
+==
+bz failed
+int 1
+return
+//call if this is a closeout op
+close_out:
+int 1
+return
+failed:
+int 0
+return
+finished:
+int 1
+return
